@@ -9,6 +9,8 @@ from sensor_msgs.msg import PointCloud
 # to be able to subcribe to pose data
 from nav_msgs.msg import Odometry
 
+# to floor values
+from math import floor
 
 class pioneerSonarMapping(object):
     '''
@@ -29,8 +31,8 @@ class pioneerSonarMapping(object):
         rospy.Subscriber("RosAria/pose", Odometry, self.poseCallback)
 	
 	# map definition
- 	self.mapW = 1.1	  # width of the map (meters)
-	self.mapH = 1.1    # height of the map (meters)
+ 	self.mapW = 1.1  # width of the map (meters)
+	self.mapH = 1.1  # height of the map (meters)
 	self.mapL = 0.1  # length of grid (meters)
 	self.map_log = [[0 for i in xrange(int(self.mapH/self.mapL))] for i in xrange(int(self.mapL/self.mapL))]
 	self.l0 = 0
@@ -46,18 +48,18 @@ class pioneerSonarMapping(object):
 	y = self.y
  	ori = self.ori
 
-	meas = [[0 for i in xrange(16)] for i in xrange(2)]
+	meas = [[0 for i in xrange(2)] for i in xrange(16)]
 
-	for i in range (0, 15) :
-		#meas[i, 1] = msg.points[i].x
-		#meas[i, 2] = msg.points[i].y
-		print(meas[i,1])
-		print (meas[i,2])
+	for i in range (0, 16) :
+		meas[i][0] = msg.points[i].x
+		meas[i][1] = msg.points[i].y
+		#print(meas[i][0],meas[i][1])
 
-	for i in range (0, self.mapH/self.mapL) :
-		for j in range (0, self.mapW/self.mapL) :
-			xi = (j-math.floor(self.mapW/self.mapL))*self.mapL
-			yi = (i+math.floor(self.mapH/self.mapL))*self.mapL
+	for i in range (0, int(self.mapH/self.mapL)) :
+		for j in range (0, int(self.mapW/self.mapL)) :
+			xi = round((j-floor((self.mapW/self.mapL)/2))*self.mapL,1)
+			yi = round((floor((self.mapH/self.mapL)/2)-i)*self.mapL,1)
+			#print(xi,yi)
 			#print('(i,j) = ({},{}) 	(xi,yi) = ({}, {})').format
 			#self.map_log(i,j) = self.map_log(i,j) + InverseSensorModel(x,y, ori, meas, xi, yi) - self.l0
 
