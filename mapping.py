@@ -79,7 +79,8 @@ class pioneerSonarMapping(object):
 	zk = sqrt((meas[k][0] - self.sens_pos[k][0])**2 + (meas[k][1] - self.sens_pos[k][1])**2 )
 	print(zk)
 	phi = atan2(yi_r-self.sens_pos[k][1], xi_r - self.sens_pos[k][0]) - self.sens_pos[k][2]
- 
+	#theta = atan2(meas[k][1]-self.sens_pos[k][1], meas[k][0] - self.sens_pos[k][0]) - self.sens_pos[k][2]
+ 	# replace abs(phi - self.sens_pos[k][2]) by abs(phi - theta)
 	if r > min(self.zmax, zk+self.alfa/2) or abs(phi - self.sens_pos[k][2]) > self.beta/2 :
 		return self.l0
 
