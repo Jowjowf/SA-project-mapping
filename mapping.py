@@ -13,7 +13,7 @@ from nav_msgs.msg import Odometry
 from nav_msgs.msg import OccupancyGrid
 
 # py math functions
-from math import floor, cos, sin, pi, sqrt, atan2, exp
+from math import floor, cos, sin, pi, sqrt, atan2, exp, asin, acos
 
 from numpy import int8
 
@@ -39,9 +39,9 @@ class pioneerSonarMapping(object):
         self.pub_OccGrid = rospy.Publisher('occupancy_grid', OccupancyGrid, queue_size=1)
 	
 	# map definition
- 	self.mapW = 15.2  # width of the map (meters)
-	self.mapH = 15.2  # height of the map (meters)
-	self.mapL = 0.4  # length of grid (meters)
+ 	self.mapW = 15  # width of the map (meters)
+	self.mapH = 15  # height of the map (meters)
+	self.mapL = 0.3  # length of grid (meters)
 	self.map_log = [[0 for i in xrange(int(self.mapH/self.mapL))] for i in xrange(int(self.mapW/self.mapL))]
 	self.l0 = 0
 	self.lfree = -1
@@ -65,22 +65,22 @@ class pioneerSonarMapping(object):
 	
 	# sensor poses
 	self.sens_pos = [[0 for i in xrange(3)] for i in xrange(16)]
-	self.sens_pos[0] = [0.135, 0.1, -pi/2]
- 	self.sens_pos[1] = [0.12, 0.15, -5*pi/18]
-	self.sens_pos[2] = [0.08, 0.18, -pi/6]
-	self.sens_pos[3] = [0.03, 0.19, -pi/18]
-	self.sens_pos[4] = [-0.03, 0.19, pi/18]
- 	self.sens_pos[5] = [-0.08, 0.18, pi/6]
-	self.sens_pos[6] = [-0.12, 0.15, 5*pi/18]
-	self.sens_pos[7] = [-0.135, 0.1, pi/2]
-	self.sens_pos[8] = [0.135, -0.112, pi/2]
- 	self.sens_pos[9] = [0.12, -0.162, 13*pi/18]
-	self.sens_pos[10] = [0.08, -0.192, 15*pi/18]
-	self.sens_pos[11] = [0.03, -0.202, 17*pi/18]
-	self.sens_pos[12] = [-0.03, -0.202, -17*pi/18]
- 	self.sens_pos[13] = [-0.08, -0.192, -15*pi/18]
-	self.sens_pos[14] = [-0.12, -0.162, -13*pi/18]
-	self.sens_pos[15] = [-0.135, -0.112, -pi/2]
+	self.sens_pos[0] = [0.1, 0.135, pi/2]
+ 	self.sens_pos[1] = [0.15, 0.12, 5*pi/18]
+	self.sens_pos[2] = [0.18, 0.08, pi/6]
+	self.sens_pos[3] = [0.19, 0.03, pi/18]
+	self.sens_pos[4] = [0.19, -0.03, -pi/18]
+ 	self.sens_pos[5] = [0.18, -0.08, -pi/6]
+	self.sens_pos[6] = [0.15, -0.12, -5*pi/18]
+	self.sens_pos[7] = [0.1, -0.135, -pi/2]
+	self.sens_pos[8] = [-0.112, 0.135, -pi/2]
+ 	self.sens_pos[9] = [-0.162, 0.12, -13*pi/18]
+	self.sens_pos[10] = [-0.192, 0.08, -15*pi/18]
+	self.sens_pos[11] = [-0.202, 0.03, -17*pi/18]
+	self.sens_pos[12] = [-0.202, -0.03, 17*pi/18]
+ 	self.sens_pos[13] = [-0.192, -0.08, 15*pi/18]
+	self.sens_pos[14] = [-0.162, -0.12, 13*pi/18]
+	self.sens_pos[15] = [-0.112, -0.135, pi/2]
 	self.meas = [[0 for i in xrange(2)] for i in xrange(16)]
 	self.pose_msg = 0
 	self.sensor_msg = 0
@@ -88,10 +88,10 @@ class pioneerSonarMapping(object):
 	# robot specifications
 	self.beta = pi/6
 	self.zmax = 5
-	self.alfa = self.mapL
+	self.alfa = 1.5*self.mapL
 	
 	# algorithm frequency (Hz)
-	self.r = rospy.Rate(50)
+	self.r = rospy.Rate(100)
 	
 
     def run_SonarMapping(self):
@@ -111,11 +111,9 @@ class pioneerSonarMapping(object):
 	meas = self.meas
 
 	for i in range (0, int(self.mapW/self.mapL)) :
-		#xi = (i - (self.mapW/self.mapL - 1)/2)*self.mapL
+		xi = (i - (self.mapW/self.mapL - 1)/2)*self.mapL
 		for j in range (0, int(self.mapH/self.mapL)) :
-			xi = round((i-floor((self.mapW/self.mapL)/2))*self.mapL,1)
-			yi = round((j-floor((self.mapH/self.mapL)/2))*self.mapL,1)
-			#yi = (j - (self.mapH/self.mapL - 1)/2)*self.mapL
+			yi = (j - (self.mapH/self.mapL - 1)/2)*self.mapL
 			self.map_log[i][j] = self.map_log[i][j] + self.InverseSensorModel(x, y, ori, meas, xi, yi) - self.l0
 			self.publishOccupancyGrid(i,j)
 	
@@ -143,14 +141,12 @@ class pioneerSonarMapping(object):
 			r = dist
 	
 	zk = sqrt((meas[k][0] - self.sens_pos[k][0])**2 + (meas[k][1] - self.sens_pos[k][1])**2 )
-	phi = atan2(yi_r-self.sens_pos[k][1], xi_r - self.sens_pos[k][0]) - self.sens_pos[k][2]
-	theta = atan2(meas[k][1]-self.sens_pos[k][1], meas[k][0] - self.sens_pos[k][0]) - self.sens_pos[k][2]
+	phi = atan2(yi_r-self.sens_pos[k][1], xi_r - self.sens_pos[k][0])
  
-	#if r > min(self.zmax, zk+self.alfa/2) or abs(phi - self.sens_pos[k][2]) > self.beta/2 :
-	if r > min(self.zmax, zk+self.alfa/2) or abs(phi - theta) > self.beta/2 :
+	if (r > min(self.zmax, zk+self.alfa/2)) or (abs(phi - self.sens_pos[k][2]) > self.beta/2) :
 		return self.l0
 
-	if zk < self.zmax and abs(r-zk) < self.alfa/2 :
+	if (zk < self.zmax) and (abs(r-zk) < self.alfa/2) :
 		return self.locc
 
 	if r <= zk :
@@ -178,7 +174,15 @@ class pioneerSonarMapping(object):
 	
 	self.x = (msg.pose.pose.position.x)
 	self.y = (msg.pose.pose.position.y)
-	self.ori = (msg.pose.pose.orientation.z)
+	z = (msg.pose.pose.orientation.z)
+	w = (msg.pose.pose.orientation.w)
+	self.ori = 2*acos(w)
+
+	if 2*acos(w)> pi :
+		self.ori = -2*asin(z)
+	else :
+		self.ori = 2*asin(z)
+	print self.ori
 
 
 if __name__ == '__main__':
