@@ -3,11 +3,12 @@
 # ROS python api with lots of handy ROS functions
 import rospy
 
-# to be able to subcribe to sonar data
+# to be able to subscribe to sonar data
 from sensor_msgs.msg import PointCloud
 
-# to be able to subcribe to pose data
-from nav_msgs.msg import Odometry
+# to be able to subscribe to pose data
+#from nav_msgs.msg import Odometry
+from geometry_msgs.msg import PoseWithCovarianceStamped
 
 # to be able to publish to map
 from nav_msgs.msg import OccupancyGrid
@@ -34,59 +35,45 @@ class pioneerSonarMapping(object):
         # subscribe to pioneer sonar topic
         rospy.Subscriber("RosAria/sonar", PointCloud, self.sonarCallback)
 	# subscribe to pioneer pose topic
-        rospy.Subscriber("RosAria/pose", Odometry, self.poseCallback)
+        #rospy.Subscriber("RosAria/pose", Odometry, self.poseCallback)
+	# subscribe to amcl pose topic
+	rospy.Subscriber("amcl_pose", PoseWithCovarianceStamped, self.poseCallback)
 	# setup publisher to occupancy grid
         self.pub_OccGrid = rospy.Publisher('occupancy_grid', OccupancyGrid, queue_size=1)
 	
 	# map definition
- 	self.mapW = 15  # width of the map (meters)
-	self.mapH = 15  # height of the map (meters)
-	self.mapL = 0.3  # length of grid (meters)
-	self.map_log = [[0 for i in xrange(int(self.mapH/self.mapL))] for i in xrange(int(self.mapW/self.mapL))]
+ 	self.mapW = 171  # width of the map (grids)
+	self.mapH = 171  # height of the map (grids)
+	self.mapL = 0.1  # length of grid (meters)
+	self.map_log = [[0 for i in xrange(self.mapH)] for i in xrange(self.mapW)]
 	self.l0 = 0
 	self.lfree = -1
-	self.locc = 1
+	self.locc = 3
 
 	# occupancy grid message
 	self.OccGrid_msg = OccupancyGrid()
-	self.OccGrid_msg.header.frame_id = 'odom'
+	self.OccGrid_msg.header.frame_id = 'map'
 	self.OccGrid_msg.info.resolution = self.mapL
-	self.OccGrid_msg.info.width = int(self.mapW/self.mapL)
-	self.OccGrid_msg.info.height = int(self.mapH/self.mapL)
-	self.OccGrid_msg.info.origin.position.x = -self.mapW/2
-	self.OccGrid_msg.info.origin.position.y = -self.mapH/2
+	self.OccGrid_msg.info.width = self.mapW
+	self.OccGrid_msg.info.height = self.mapH
+	self.OccGrid_msg.info.origin.position.x = -self.mapW*self.mapL/2
+	self.OccGrid_msg.info.origin.position.y = -self.mapH*self.mapL/2
 	self.OccGrid_msg.info.origin.position.z = 0
 	self.OccGrid_msg.info.origin.orientation.x = 0
 	self.OccGrid_msg.info.origin.orientation.y = 0
 	self.OccGrid_msg.info.origin.orientation.z = 0
 	self.OccGrid_msg.info.origin.orientation.w = 0
-	self.OccGrid_msg.data = [-1 for i in xrange(int(self.mapH*self.mapW/(self.mapL**2)))]
+	self.OccGrid_msg.data = [-1 for i in xrange(self.mapW*self.mapH)]
 	self.pub_OccGrid.publish(self.OccGrid_msg)
 	
-	# sensor poses
-	self.sens_pos = [[0 for i in xrange(3)] for i in xrange(16)]
-	self.sens_pos[0] = [0.1, 0.135, pi/2]
- 	self.sens_pos[1] = [0.15, 0.12, 5*pi/18]
-	self.sens_pos[2] = [0.18, 0.08, pi/6]
-	self.sens_pos[3] = [0.19, 0.03, pi/18]
-	self.sens_pos[4] = [0.19, -0.03, -pi/18]
- 	self.sens_pos[5] = [0.18, -0.08, -pi/6]
-	self.sens_pos[6] = [0.15, -0.12, -5*pi/18]
-	self.sens_pos[7] = [0.1, -0.135, -pi/2]
-	self.sens_pos[8] = [-0.112, 0.135, -pi/2]
- 	self.sens_pos[9] = [-0.162, 0.12, -13*pi/18]
-	self.sens_pos[10] = [-0.192, 0.08, -15*pi/18]
-	self.sens_pos[11] = [-0.202, 0.03, -17*pi/18]
-	self.sens_pos[12] = [-0.202, -0.03, 17*pi/18]
- 	self.sens_pos[13] = [-0.192, -0.08, 15*pi/18]
-	self.sens_pos[14] = [-0.162, -0.12, 13*pi/18]
-	self.sens_pos[15] = [-0.112, -0.135, pi/2]
+
+	#sensor measurements
 	self.meas = [[0 for i in xrange(2)] for i in xrange(16)]
 	self.pose_msg = 0
 	self.sensor_msg = 0
 
 	# robot specifications
-	self.beta = pi/6
+	self.beta = pi/12
 	self.zmax = 5
 	self.alfa = 1.5*self.mapL
 	
@@ -104,53 +91,65 @@ class pioneerSonarMapping(object):
 
     def occupancy_grid_mapping(self):
 
-	# robot pose and measurement
-	x = self.x
-	y = self.y
- 	ori = self.ori
-	meas = self.meas
+	xmin = 0
+	if (self.x-self.zmax-0.25 > -(self.mapW*self.mapL)/2):
+		xmin=int(floor(((self.x-self.zmax-0.25)/self.mapL)+((self.mapW - 1)/2)))
 
-	for i in range (0, int(self.mapW/self.mapL)) :
-		xi = (i - (self.mapW/self.mapL - 1)/2)*self.mapL
-		for j in range (0, int(self.mapH/self.mapL)) :
-			yi = (j - (self.mapH/self.mapL - 1)/2)*self.mapL
-			self.map_log[i][j] = self.map_log[i][j] + self.InverseSensorModel(x, y, ori, meas, xi, yi) - self.l0
+	xmax = self.mapW
+	if (self.x+self.zmax+0.25 < (self.mapW*self.mapL)/2):
+		xmax=int(floor(((self.x+self.zmax+0.25)/self.mapL)+((self.mapW - 1)/2)+1))
+	
+	ymin = 0
+	if (self.y-self.zmax-0.25 > -(self.mapH*self.mapL)/2):
+		ymin=int(floor(((self.y-self.zmax-0.25)/self.mapL)+((self.mapH - 1)/2)))
+
+	ymax = self.mapH
+	if (self.y+self.zmax+0.25 < (self.mapH*self.mapL)/2):
+		ymax=int(floor(((self.y+self.zmax+0.25)/self.mapL)+((self.mapH - 1)/2)+1))
+
+
+	for i in range (xmin, xmax) :
+		xi = (i - (self.mapW - 1)/2)*self.mapL
+		for j in range (ymin, ymax) :
+			yi = (j - (self.mapH - 1)/2)*self.mapL
+			self.map_log[i][j] = self.map_log[i][j] + self.InverseSensorModel(self.x, self.y, self.ori, self.meas, xi, yi) - self.l0
 			self.publishOccupancyGrid(i,j)
+	
+	self.pub_OccGrid.publish(self.OccGrid_msg)
 	
 
     def publishOccupancyGrid(self, i, j):
 	
 	# convert from log odds to percentage
-	self.OccGrid_msg.data[j*int(self.mapH/self.mapL) + i] = int8(100*(1 - 1/(1+exp(self.map_log[i][j]))))
-	self.pub_OccGrid.publish(self.OccGrid_msg)	
+	self.OccGrid_msg.data[j*self.mapH + i] = int8(round(100*(1 - 1/(1+exp(self.map_log[i][j])))))
+		
 
 
     def InverseSensorModel(self, x, y, ori, meas, xi, yi):
 	
-	# grid cell in robot coords
-	xi_r = cos(ori)*(xi-x)-sin(-ori)*(yi-y)
-	yi_r = sin(-ori)*(xi-x)+cos(ori)*(yi-y)
+	# distance and bearing of map cell in relation to robot
+	r = sqrt((xi-x)**2+(yi-y)**2)
+	phi = atan2(yi-y,xi-x) - ori
 	
-	r = -1
-	
-	# determine sensor k closest to cell	
+	# determine sensor k closest to cell
+	theta_k_sens = -10	
 	for i in range (0, 16):
-		dist = sqrt((self.sens_pos[i][0] - xi_r)**2 + (self.sens_pos[i][1] - yi_r)**2 )
-		if r == -1 or dist < r :
+		sens_angle_i = atan2(meas[i][1],meas[i][0])
+		if theta_k_sens == -10 or abs(phi-sens_angle_i) < abs(phi-theta_k_sens) :
 			k = i
-			r = dist
+			theta_k_sens = sens_angle_i
 	
-	zk = sqrt((meas[k][0] - self.sens_pos[k][0])**2 + (meas[k][1] - self.sens_pos[k][1])**2 )
-	phi = atan2(yi_r-self.sens_pos[k][1], xi_r - self.sens_pos[k][0])
+	zk = sqrt((meas[k][0])**2 + (meas[k][1])**2 )
  
-	if (r > min(self.zmax, zk+self.alfa/2)) or (abs(phi - self.sens_pos[k][2]) > self.beta/2) :
+	if (r > min(self.zmax, zk+self.alfa/2)) or (abs(phi - theta_k_sens) > self.beta/2) :
 		return self.l0
 
 	if (zk < self.zmax) and (abs(r-zk) < self.alfa/2) :
 		return self.locc
 
-	if r <= zk :
+	if (zk < self.zmax) and (r <= zk):
 		return self.lfree
+	return self.l0
 
 
     def sonarCallback(self, msg):
@@ -176,13 +175,11 @@ class pioneerSonarMapping(object):
 	self.y = (msg.pose.pose.position.y)
 	z = (msg.pose.pose.orientation.z)
 	w = (msg.pose.pose.orientation.w)
-	self.ori = 2*acos(w)
 
 	if 2*acos(w)> pi :
 		self.ori = -2*asin(z)
 	else :
 		self.ori = 2*asin(z)
-	print self.ori
 
 
 if __name__ == '__main__':
