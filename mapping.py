@@ -47,8 +47,8 @@ class pioneerSonarMapping(object):
 	self.mapL = 0.1  # length of grid (meters)
 	self.map_log = [[0 for i in xrange(self.mapH)] for i in xrange(self.mapW)]
 	self.l0 = 0
-	self.lfree = -1
-	self.locc = 3
+	self.lfree = -0.1
+	self.locc = 0.3
 
 	# occupancy grid message
 	self.OccGrid_msg = OccupancyGrid()
@@ -73,7 +73,7 @@ class pioneerSonarMapping(object):
 	self.sensor_msg = 0
 
 	# robot specifications
-	self.beta = pi/12
+	self.beta = pi/24
 	self.zmax = 5
 	self.alfa = 1.5*self.mapL
 	
